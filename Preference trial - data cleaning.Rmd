@@ -1,0 +1,844 @@
+---
+title: "Music for GitHUb"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+date: '2022-09-19'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Analysis for grad research (RCT preference trial)
+
+Quick rundown of code used for analysing preference trial data for "Randomized controlled trial on listener preferences for classical music" + a study exploring perceived differences in the music composed by female versus male composers. 
+
+Some notes:
+
+* Each respondent chose their preference between two very similar musical samples 15 times during the experiment. 
+* Treatment group knew composer sex - control group didn't. 
+* 4 pairs had music samples from composers of the same sex, others were female vs. male pairs. 
+
+First, to get an idea of what the original data looks like. 
+
+* Pair_nr = music sample pairs from 1 to 15 for each respondent
+* Preference = which sample they preferred (empty, as of yet)
+* heardAF & heard BM = heard either sample before (if either one ticked YES, pair excluded from analysis)
+* Training_C = has respondent trained in classical music (dummy)
+* Training_J = has respondent trained in jazz music (dummy)
+* Training_Other = has respondent trained in other music styles (dummy)
+
+```{r data, include=FALSE}
+library("tidyverse")
+library("dplyr")
+library("readxl")
+library("knitr")
+
+FIN_data <- read_excel("/Users/ainoli/Dropbox/Project Aino/PROJECT Composers/Data files/Original excel files/Final FIN original data.xlsx", 
+                col_types = c("numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "text", "numeric", "text","numeric", "numeric", "numeric",
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric",
+                              "numeric", "numeric", "numeric", "numeric", "text", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric", "numeric", "text", "text", "text", 
+                              "text", "numeric", "numeric", "numeric", "numeric", "text", "text", 
+                              "text", "text", "text", "text", "text", "text", "text"))
+
+```
+
+
+```{r echo=FALSE, results='asis'}
+temp <- head(FIN_data, 6)
+kable(temp[ , 1:12], caption = "glimbse of the original data")
+```
+
+Other variables in the data include classical music listening and purchasing info, training info, and sample preference info:
+
+```{r colnames, echo=FALSE, results= 'markdown'}
+colnames(FIN_data[10:101], )
+```
+
+## Data cleaning
+
+We'll clean the data to only keep necessary data, that's transformed for easier analysis whenever necessary.
+Let's create a new dataframe for the cleaned up data. We'll call it "rep_FIN"
+
+```{r Data_cleaning1, echo=TRUE, results='markup'}
+FIN_data <- FIN_data %>%
+  mutate(Duration_sec = Duration_sec/60) %>%
+  rename(duration_min = Duration_sec)
+
+FIN_data <- arrange(FIN_data, ID)
+
+FIN_simple <- select(FIN_data, 1:18)
+FIN_simple <- FIN_simple %>%
+  cbind(FIN_data[94])
+
+#Create duplicates for each row --> 15 rows of each
+FIN_simple <- data.frame(FIN_simple)
+reptimes <- 15
+idx <- rep(1:nrow(FIN_simple), reptimes) 
+rep_FIN <- FIN_simple[idx, ]
+
+remove("FIN_simple", "reptimes", "idx")
+
+#arrange in alphabetical order
+rep_FIN <- arrange(rep_FIN, ID)
+
+rep15 <- rep(1:15, 107)
+rep_FIN <- rep_FIN %>%
+  mutate(Pair_nr = rep15) %>%
+  add_column(rct = 1) %>%
+  add_column(MF_score = 0) %>%
+  add_column(MF_same = 1) %>%
+  rename(Female = `Gender`) %>%
+  rename(cont = `Continue`)
+
+remove("rep15")
+
+temp <- head(rep_FIN, 5)
+kable(temp[ , 1:12], caprion = "Setting up a dataframe for cleaned data")
+
+```
+
+So we have our new dataframe. Each respondent is coded in 15 rows to represent the 15 times they had to make a choice between music samples.
+
+Now we need to input the date we want from the original df.
+Specifically, we are picking up the following:
+ - preference scores
+ - existence of any previous musical training ()
+
+```{r Transfer data}
+
+#Create preference score vectors
+Prefs <- select(FIN_data, `S11-12 scoring`, `S21-22 scoring`, `S31-32 scoring`, `S41-42 scoring`, 
+                `S51-52 scoring`, `S61-62 scoring`, `S71-72 scoring`, `S81-82 scoring`, 
+                `S91-92 scoring`, `S101-102 scoring`, `S111-112 scoring`, `S121-122 scoring`, 
+                `S131-132 scoring`, `S141-142 scoring`, `S151-153 scoring`, ID)
+Prefs <- arrange(Prefs, ID)
+
+
+### Transfer data to main DF
+#Sample pair 1
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(1+15*(i-1))] == 1) {
+    rep_FIN$Preference[(1+15*(i-1))] <- Prefs$`S11-12 scoring`[i]
+    rep_FIN$Training_C[(1+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(1+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(1+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_same[(1+15*(i-1))] <- 0
+  } else {
+    next
+  }
+}
+
+#Sample pair 2
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(2+15*(i-1))] == 2) {
+    rep_FIN$Preference[(2+15*(i-1))] <- Prefs$`S21-22 scoring`[i]
+    rep_FIN$Training_C[(2+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(2+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(2+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_same[(2+15*(i-1))] <- 0
+  } else {
+    next
+  }
+}
+
+```
+
+Do the same for the other 13 pairs and check head(rep_FIN, 5) to show progress.
+
+```{r data transfer, include=FALSE}
+#Sample pair 3
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(3+15*(i-1))] == 3) {
+    rep_FIN$Preference[(3+15*(i-1))] <- Prefs$`S31-32 scoring`[i]
+    rep_FIN$Training_C[(3+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(3+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(3+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(3+15*(i-1))] <- 99
+  } else {
+    next
+  }
+}
+
+#Sample pair 4
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(4+15*(i-1))] == 4) {
+    rep_FIN$Preference[(4+15*(i-1))] <- Prefs$`S41-42 scoring`[i]
+    rep_FIN$Training_C[(4+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(4+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(4+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(4+15*(i-1))] <- -73
+  } else {
+    next
+  }
+}
+
+#Sample pair 5
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(5+15*(i-1))] == 5) {
+    rep_FIN$Preference[(5+15*(i-1))] <- Prefs$`S51-52 scoring`[i]
+    rep_FIN$Training_C[(5+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(5+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(5+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(5+15*(i-1))] <- 45
+  } else {
+    next
+  }
+}
+
+#Sample pair 6
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(6+15*(i-1))] == 6) {
+    rep_FIN$Preference[(6+15*(i-1))] <- Prefs$`S61-62 scoring`[i]
+    rep_FIN$Training_C[(6+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(6+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(6+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(6+15*(i-1))] <- -27
+  } else {
+    next
+  }
+}
+
+#Sample pair 7
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(7+15*(i-1))] == 7) {
+    rep_FIN$Preference[(7+15*(i-1))] <- Prefs$`S71-72 scoring`[i]
+    rep_FIN$Training_C[(7+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(7+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(7+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(7+15*(i-1))] <- -99
+  } else {
+    next
+  }
+}
+
+#Sample pair 8
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(8+15*(i-1))] == 8) {
+    rep_FIN$Preference[(8+15*(i-1))] <- Prefs$`S81-82 scoring`[i]
+    rep_FIN$Training_C[(8+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(8+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(8+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_same[(8+15*(i-1))] <- 999
+  } else {
+    next
+  }
+}
+
+#Sample pair 9
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(9+15*(i-1))] == 9) {
+    rep_FIN$Preference[(9+15*(i-1))] <- Prefs$`S91-92 scoring`[i]
+    rep_FIN$Training_C[(9+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(9+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(9+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(9+15*(i-1))] <- -20
+  } else {
+    next
+  }
+}
+
+#Sample pair 10
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(10+15*(i-1))] == 10) {
+    rep_FIN$Preference[(10+15*(i-1))] <- Prefs$`S101-102 scoring`[i]
+    rep_FIN$Training_C[(10+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(10+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(10+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$rct[(10+15*(i-1))] <- 0
+    rep_FIN$MF_same[(10+15*(i-1))] <- 999
+  } else {
+    next
+  }
+}
+
+#Sample pair 11
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(11+15*(i-1))] == 11) {
+    rep_FIN$Preference[(11+15*(i-1))] <- Prefs$`S111-112 scoring`[i]
+    rep_FIN$Training_C[(11+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(11+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(11+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$rct[(11+15*(i-1))] <- 0
+    rep_FIN$MF_score [(11+15*(i-1))] <- 79
+  } else {
+    next
+  }
+}
+
+#Sample pair 12
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(12+15*(i-1))] == 12) {
+    rep_FIN$Preference[(12+15*(i-1))] <- Prefs$`S121-122 scoring`[i]
+    rep_FIN$Training_C[(12+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(12+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(12+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$rct[(12+15*(i-1))] <- 0
+    rep_FIN$MF_score [(12+15*(i-1))] <- 71
+  } else {
+    next
+  }
+}
+
+#Sample pair 13
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(13+15*(i-1))] == 13) {
+    rep_FIN$Preference[(13+15*(i-1))] <- Prefs$`S131-132 scoring`[i]
+    rep_FIN$Training_C[(13+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(13+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(13+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(13+15*(i-1))] <- -95
+  } else {
+    next
+  }
+}
+
+#Sample pair 14
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(14+15*(i-1))] == 14) {
+    rep_FIN$Preference[(14+15*(i-1))] <- Prefs$`S141-142 scoring`[i]
+    rep_FIN$Training_C[(14+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(14+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(14+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$rct[(14+15*(i-1))] <- 0
+    rep_FIN$MF_score [(14+15*(i-1))] <- -60
+  } else {
+    next
+  }
+}
+
+#Sample pair 15
+for(i in 1:nrow(Prefs)) {
+  if (rep_FIN$Pair_nr[(15+15*(i-1))] == 15) {
+    rep_FIN$Preference[(15+15*(i-1))] <- Prefs$`S151-153 scoring`[i]
+    rep_FIN$Training_C[(15+15*(i-1))] <- FIN_data$Training_C[i]
+    rep_FIN$Training_J[(15+15*(i-1))] <- FIN_data$Training_J[i]
+    rep_FIN$Training_Other[(15+15*(i-1))] <- FIN_data$Training_Other[i]
+    rep_FIN$MF_score [(15+15*(i-1))] <- -99
+  } else {
+    next
+  }
+}
+```
+
+```{r echo=FALSE, results='asis'}
+temp <- head(rep_FIN, 5)
+kable(temp[, 1:10])
+kable(temp[, 11:20])
+```
+
+
+## Next, include the "heard before" info:
+
+```{r heard_before loops, echo=TRUE}
+# Sample pair 1
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(1+15*(i-1))] == 1){
+    if (is.na(rep_FIN$HeardAF[(1+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(1+15*(i-1))] <- FIN_data$S11TF[i]
+      if (is.na(rep_FIN$HeardBM[(1+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(1+15*(i-1))] <- FIN_data$S12TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+#Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(1+15*(i-1))] == 1){
+    if (is.na(rep_FIN$HeardAF[(1+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(1+15*(i-1))] <- FIN_data$S11CF[i]
+      if (is.na(rep_FIN$HeardBM[(1+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(1+15*(i-1))] <- FIN_data$S12CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+```
+
+Repeat for the rest of the sample pairs
+
+```{r heard_before loops2, include=FALSE}
+# Sample pair 2
+# Treatment samples
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(2+15*(i-1))] == 2){
+    if (is.na(rep_FIN$HeardAF[(2+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(2+15*(i-1))] <- FIN_data$S21TF[i]
+      if (is.na(rep_FIN$HeardBM[(2+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(2+15*(i-1))] <- FIN_data$S22TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control samples
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(2+15*(i-1))] == 2){
+    if (is.na(rep_FIN$HeardAF[(2+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(2+15*(i-1))] <- FIN_data$S21CF[i]
+      if (is.na(rep_FIN$HeardBM[(2+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(2+15*(i-1))] <- FIN_data$S22CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 3
+# Treatment samples
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(3+15*(i-1))] == 3){
+    if (is.na(rep_FIN$HeardAF[(3+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(3+15*(i-1))] <- FIN_data$S31TF[i]
+      if (is.na(rep_FIN$HeardBM[(3+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(3+15*(i-1))] <- FIN_data$S32TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control samples
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(3+15*(i-1))] == 3){
+    if (is.na(rep_FIN$HeardAF[(3+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(3+15*(i-1))] <- FIN_data$S31CF[i]
+      if (is.na(rep_FIN$HeardBM[(3+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(3+15*(i-1))] <- FIN_data$S32CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 4
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(4+15*(i-1))] == 4){
+    if (is.na(rep_FIN$HeardAF[(4+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(4+15*(i-1))] <- FIN_data$S41TF[i]
+      if (is.na(rep_FIN$HeardBM[(4+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(4+15*(i-1))] <- FIN_data$S42TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(4+15*(i-1))] == 4){
+    if (is.na(rep_FIN$HeardAF[(4+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(4+15*(i-1))] <- FIN_data$S41CF[i]
+      if (is.na(rep_FIN$HeardBM[(4+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(4+15*(i-1))] <- FIN_data$S42CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 5
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(5+15*(i-1))] == 5){
+    if (is.na(rep_FIN$HeardAF[(5+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(5+15*(i-1))] <- FIN_data$S51TF[i]
+      if (is.na(rep_FIN$HeardBM[(5+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(5+15*(i-1))] <- FIN_data$S52TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(5+15*(i-1))] == 5){
+    if (is.na(rep_FIN$HeardAF[(5+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(5+15*(i-1))] <- FIN_data$S51CF[i]
+      if (is.na(rep_FIN$HeardBM[(5+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(5+15*(i-1))] <- FIN_data$S52CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 6
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(6+15*(i-1))] == 6){
+    if (is.na(rep_FIN$HeardAF[(6+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(6+15*(i-1))] <- FIN_data$S61TF[i]
+      if (is.na(rep_FIN$HeardBM[(6+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(6+15*(i-1))] <- FIN_data$S62TM[i] 
+      }
+    }
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(6+15*(i-1))] == 6){
+    if (is.na(rep_FIN$HeardAF[(6+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(6+15*(i-1))] <- FIN_data$S61CF[i]
+      if (is.na(rep_FIN$HeardBM[(6+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(6+15*(i-1))] <- FIN_data$S62CM[i] 
+      }
+    }
+  }else {
+    next
+  }
+}
+
+
+###############
+# indeksin tarkistus
+#### Generate row number or row index using seq.int() function
+rep_FIN$row_num <- seq.int(nrow(rep_FIN)) 
+
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(4+15*(i-1))] == 4){
+    print(rep_FIN$row_num[(4+15*(i-1))])
+    print(rep_FIN$Pair_nr[(4+15*(i-1))])
+  } else {
+    next
+  }
+}
+###################
+
+# Sample pair 7
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(7+15*(i-1))] == 7){
+    if (is.na(rep_FIN$HeardAF[(7+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(7+15*(i-1))] <- FIN_data$S71TF[i]
+      if (is.na(rep_FIN$HeardBM[(7+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(7+15*(i-1))] <- FIN_data$S72TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(7+15*(i-1))] == 7){
+    if (is.na(rep_FIN$HeardAF[(7+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(7+15*(i-1))] <- FIN_data$S71CF[i]
+      if (is.na(rep_FIN$HeardBM[(7+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(7+15*(i-1))] <- FIN_data$S72CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 8
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(8+15*(i-1))] == 8){
+    if (is.na(rep_FIN$HeardAF[(8+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(8+15*(i-1))] <- FIN_data$S81TF[i]
+      if (is.na(rep_FIN$HeardBM[(8+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(8+15*(i-1))] <- FIN_data$S82TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(8+15*(i-1))] == 8){
+    if (is.na(rep_FIN$HeardAF[(8+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(8+15*(i-1))] <- FIN_data$S81CF[i]
+      if (is.na(rep_FIN$HeardBM[(8+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(8+15*(i-1))] <- FIN_data$S82CM[i] 
+      }
+    }
+  }else {
+    next
+  }
+}
+
+# Sample pair 9
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(9+15*(i-1))] == 9){
+    if (is.na(rep_FIN$HeardAF[(9+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(9+15*(i-1))] <- FIN_data$S91TF[i]
+      if (is.na(rep_FIN$HeardBM[(9+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(9+15*(i-1))] <- FIN_data$S92TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(9+15*(i-1))] == 9){
+    if (is.na(rep_FIN$HeardAF[(9+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(9+15*(i-1))] <- FIN_data$S91CF[i]
+      if (is.na(rep_FIN$HeardBM[(9+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(9+15*(i-1))] <- FIN_data$S92CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 10
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(10+15*(i-1))] == 10){
+    if (is.na(rep_FIN$HeardAF[(10+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(10+15*(i-1))] <- FIN_data$S101TM_1[i]
+      if (is.na(rep_FIN$HeardBM[(10+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(10+15*(i-1))] <- FIN_data$S102TM_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(10+15*(i-1))] == 10){
+    if (is.na(rep_FIN$HeardAF[(10+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(10+15*(i-1))] <- FIN_data$S101CM_1[i]
+      if (is.na(rep_FIN$HeardBM[(10+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(10+15*(i-1))] <- FIN_data$S102CM_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 11
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(11+15*(i-1))] == 11){
+    if (is.na(rep_FIN$HeardAF[(11+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(11+15*(i-1))] <- FIN_data$S111TF_1[i]
+      if (is.na(rep_FIN$HeardBM[(11+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(11+15*(i-1))] <- FIN_data$S112TF_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(11+15*(i-1))] == 11){
+    if (is.na(rep_FIN$HeardAF[(11+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(11+15*(i-1))] <- FIN_data$S111CF_1[i]
+      if (is.na(rep_FIN$HeardBM[(11+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(11+15*(i-1))] <- FIN_data$S112CF_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 12
+# TReatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(12+15*(i-1))] == 12){
+    if (is.na(rep_FIN$HeardAF[(12+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(12+15*(i-1))] <- FIN_data$S121TM_1[i]
+      if (is.na(rep_FIN$HeardBM[(12+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(12+15*(i-1))] <- FIN_data$S122TM_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(12+15*(i-1))] == 12){
+    if (is.na(rep_FIN$HeardAF[(12+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(12+15*(i-1))] <- FIN_data$S121CM_1[i]
+      if (is.na(rep_FIN$HeardBM[(12+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(12+15*(i-1))] <- FIN_data$S122CM_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 13
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(13+15*(i-1))] == 13){
+    if (is.na(rep_FIN$HeardAF[(13+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(13+15*(i-1))] <- FIN_data$S131TF[i]
+      if (is.na(rep_FIN$HeardBM[(13+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(13+15*(i-1))] <- FIN_data$S132TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(13+15*(i-1))] == 13){
+    if (is.na(rep_FIN$HeardAF[(13+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(13+15*(i-1))] <- FIN_data$S131CF[i]
+      if (is.na(rep_FIN$HeardBM[(13+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(13+15*(i-1))] <- FIN_data$S132CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 14
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(14+15*(i-1))] == 14){
+    if (is.na(rep_FIN$HeardAF[(14+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(14+15*(i-1))] <- FIN_data$S141TF_1[i]
+      if (is.na(rep_FIN$HeardBM[(14+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(14+15*(i-1))] <- FIN_data$S142TF_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(14+15*(i-1))] == 14){
+    if (is.na(rep_FIN$HeardAF[(14+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(14+15*(i-1))] <- FIN_data$S141CF_1[i]
+      if (is.na(rep_FIN$HeardBM[(14+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(14+15*(i-1))] <- FIN_data$S142CF_2[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Sample pair 15
+# Treatment
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(15+15*(i-1))] == 15){
+    if (is.na(rep_FIN$HeardAF[(15+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(15+15*(i-1))] <- FIN_data$S151TF[i]
+      if (is.na(rep_FIN$HeardBM[(15+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(15+15*(i-1))] <- FIN_data$S152TM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+# Control
+for (i in 1:nrow(FIN_data)){
+  if (rep_FIN$Pair_nr[(15+15*(i-1))] == 15){
+    if (is.na(rep_FIN$HeardAF[(15+15*(i-1))]) == TRUE){
+      rep_FIN$HeardAF[(15+15*(i-1))] <- FIN_data$S151CF[i]
+      if (is.na(rep_FIN$HeardBM[(15+15*(i-1))]) == TRUE){
+        rep_FIN$HeardBM[(15+15*(i-1))] <- FIN_data$S152CM[i] 
+      }
+    } 
+  }else {
+    next
+  }
+}
+
+```
+
+Other changes:
+ - recodeing M/F/other to 0/1/3
+ - change data types as needed
+ - check summary statistics to find any mistakes or oddities.
+ 
+## dataframe structure:
+ 
+```{r}
+### re-code Female as M = 0, F = 1, other = 3
+for (i in 1:length(rep_FIN$Female)) {
+  if (is.na(rep_FIN$Female[i]) == FALSE){
+    if (rep_FIN$Female[i] == "M") {
+      rep_FIN$Female[i] <- 0
+    } else if (rep_FIN$Female[i] == "F") {
+      rep_FIN$Female[i] <- 1
+    } else if (rep_FIN$Female[i] == "Other") {
+      rep_FIN$Female[i] <- 3
+    }
+  }
+}
+
+rep_FIN$Female <- as.numeric(unlist(rep_FIN$Female))
+rep_FIN$HeardBM <-as.numeric(unlist(rep_FIN$HeardBM))
+rep_FIN$HeardAF <-as.numeric(unlist(rep_FIN$HeardAF))
+
+### Summaries and descriptive data
+### S.D. and mean differences would be NAIS
+str(rep_FIN)
+
+```
+
+## summary:
+ 
+```{r echo=FALSE, results='markup'}
+summary(rep_FIN)
+```
+ Looks okay. :) 
+ 
